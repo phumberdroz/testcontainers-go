@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd/platforms"
+	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -757,6 +759,24 @@ func NewDockerClient() (cli *client.Client, host string, tcConfig TestContainers
 			"x-tc-sid": sessionID().String(),
 		}),
 	)
+	if strings.HasPrefix(host, "ssh://") {
+		helper, err2 := connhelper.GetConnectionHelper(host)
+		if err2 != nil {
+			return nil, "", TestContainersConfig{}, err2
+		}
+		httpClient := &http.Client{
+			// No tls
+			// No proxy
+			Transport: &http.Transport{
+				DialContext: helper.Dialer,
+			},
+		}
+		opts = append(opts,
+			client.WithHTTPClient(httpClient),
+			client.WithHost(helper.Host),
+			client.WithDialContext(helper.Dialer),
+		)
+	}
 
 	cli, err = client.NewClientWithOpts(opts...)
 
